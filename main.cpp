@@ -62,7 +62,7 @@ void ds_data_print(const u_char * packet, struct pcap_pkthdr* header){
         printf("DATA == ");
         for(int i = 0;i < data_len - 53;i++) {
             printf("%02x ", packet[54+i]);
-            if(i==10){
+            if(i==9){
                 break;
             }
         }
