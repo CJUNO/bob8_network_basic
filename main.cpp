@@ -2,6 +2,14 @@
 #include <stdio.h>
 #include <string.h>
 
+struct Header_len{
+    int ethernet_len;
+    int ip_header_len;
+    int tcp_header_len;
+    int total_len;
+};
+
+
 int ip_check(const u_char * packet){
     if(packet[12] == 0x08 && packet[13] == 0x00){
         return 1;
@@ -38,30 +46,27 @@ void ds_ip_print(const u_char * packet){
     printf("%s\n", d_ip);
 }
 
-void ds_port_print(const u_char * packet){
+void ds_port_print(const u_char * packet, Header_len len_header){
     char d_port[20];
     char s_port[20];
 
-    sprintf(s_port, "S_PORT == %d", packet[34] * 256 + packet[35]);
-    sprintf(d_port, "D_PORT == %d", packet[36] * 256 + packet[37]);
+    sprintf(s_port, "S_PORT == %d", packet[len_header.ethernet_len + len_header.ip_header_len] * 256 + packet[len_header.ethernet_len + len_header.ip_header_len +1]);
+    sprintf(d_port, "D_PORT == %d", packet[len_header.ethernet_len + len_header.ip_header_len + 2] * 256 + packet[len_header.ethernet_len + len_header.ip_header_len + 3]);
 
     printf("%s\n", s_port);
     printf("%s\n", d_port);
 }
 
-void ds_data_print(const u_char * packet, struct pcap_pkthdr* header){
-    bpf_u_int32 data_len = header ->len; // test_code
-    char data_insert[13];
+void ds_data_print(const u_char * packet, struct pcap_pkthdr* header, Header_len len_header){
+    bpf_u_int32 data_len = header ->len;
 
-    // printf("data len == %d\n",header -> len);
-
-    if(data_len == 54){
+    if(data_len == len_header.total_len){
         printf("DATA == None\n");
     }
     else {
         printf("DATA == ");
-        for(int i = 0;i < data_len - 53;i++) {
-            printf("%02x ", packet[54+i]);
+        for(int i = 0;i < data_len - (len_header.total_len - 1);i++) {
+            printf("%02x ", packet[len_header.total_len + i]);
             if(i==9){
                 break;
             }
@@ -69,6 +74,21 @@ void ds_data_print(const u_char * packet, struct pcap_pkthdr* header){
         printf("\n");
     }
 }
+
+int ip_len(const u_char * packet){
+    int8_t header_ip_len = packet[14];
+
+    header_ip_len = header_ip_len << 4;
+    header_ip_len = header_ip_len >> 4;
+    return header_ip_len * 4;
+}
+
+int tcp_len(const u_char * packet, Header_len len_header){
+    int8_t tcp_len = packet[len_header.ethernet_len + len_header.ip_header_len + 12];
+    return (tcp_len >> 4) * 4;
+}
+
+
 
 void usage() {
   printf("syntax: pcap_test <interface>\n");
@@ -95,6 +115,7 @@ int main(int argc, char* argv[]) {
 
   while (true) {
     int i = 0;
+    Header_len len_header;
     struct pcap_pkthdr* header;
     const u_char* packet;
     bpf_u_int32 packet_len = header -> caplen;
@@ -102,13 +123,20 @@ int main(int argc, char* argv[]) {
     if (res == 0) continue;
     if (res == -1 || res == -2) break;
     //printf("%u bytes captured\n", header->caplen);
+    
+
+    len_header.ethernet_len = 14;
+    len_header.ip_header_len = ip_len(packet);
+    len_header.tcp_header_len = tcp_len(packet, len_header);
+    len_header.total_len = len_header.ethernet_len + len_header.ip_header_len + len_header.tcp_header_len;
 
     if (ip_check(packet)){
         if(tcp_check(packet)){
+
             ds_mac_print(packet);
             ds_ip_print(packet);
-            ds_port_print(packet);
-            ds_data_print(packet, header);
+            ds_port_print(packet, len_header);
+            ds_data_print(packet, header, len_header);
             printf("--------------\n");
         }
     }
